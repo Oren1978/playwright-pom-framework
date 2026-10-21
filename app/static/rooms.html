@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Harbor Hotel | Rooms</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="bar">
+    <strong>Harbor Hotel admin</strong>
+    <button id="logout" class="link">Log out</button>
+  </header>
+  <main class="card">
+    <h1>Rooms</h1>
+    <form id="room-form" class="row" novalidate>
+      <input type="hidden" id="room-id">
+      <label>Number <input id="room-number" required></label>
+      <label>Type
+        <select id="room-type">
+          <option>Single</option><option>Double</option><option>Twin</option>
+          <option>Family</option><option>Suite</option>
+        </select>
+      </label>
+      <label>Price <input id="room-price" type="number" min="1" required></label>
+      <label class="check"><input id="room-accessible" type="checkbox"> Accessible</label>
+      <button type="submit" id="room-submit">Create room</button>
+      <button type="button" id="room-cancel" class="link" hidden>Cancel</button>
+    </form>
+    <p id="form-error" class="error" role="alert" hidden></p>
+    <p id="status" class="muted" role="status" aria-live="polite"></p>
+    <table aria-label="Rooms">
+      <thead><tr><th>Number</th><th>Type</th><th>Price</th><th>Accessible</th><th></th></tr></thead>
+      <tbody id="rooms-body"><tr><td colspan="5" class="muted">Loading...</td></tr></tbody>
+    </table>
+  </main>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const form = $("room-form");
+    let rooms = [];
+
+    function showError(message) {
+      $("form-error").textContent = message;
+      $("form-error").hidden = !message;
+    }
+
+    function resetForm() {
+      form.reset();
+      $("room-id").value = "";
+      $("room-submit").textContent = "Create room";
+      $("room-cancel").hidden = true;
+      showError("");
+    }
+
+    function render() {
+      const body = $("rooms-body");
+      body.replaceChildren();
+      if (!rooms.length) {
+        const row = body.insertRow();
+        const cell = row.insertCell();
+        cell.colSpan = 5;
+        cell.className = "muted";
+        cell.textContent = "No rooms yet";
+        return;
+      }
+      for (const room of rooms) {
+        const row = body.insertRow();
+        row.dataset.roomNumber = room.number;
+        for (const value of [room.number, room.type, room.price, room.accessible ? "Yes" : "No"]) {
+          row.insertCell().textContent = value;
+        }
+        const actions = row.insertCell();
+        const edit = document.createElement("button");
+        edit.textContent = "Edit";
+        edit.className = "link";
+        edit.setAttribute("aria-label", `Edit room ${room.number}`);
+        edit.onclick = () => {
+          $("room-id").value = room.id;
+          $("room-number").value = room.number;
+          $("room-type").value = room.type;
+          $("room-price").value = room.price;
+          $("room-accessible").checked = room.accessible;
+          $("room-submit").textContent = "Save changes";
+          $("room-cancel").hidden = false;
+        };
+        const del = document.createElement("button");
+        del.textContent = "Delete";
+        del.className = "link danger";
+        del.setAttribute("aria-label", `Delete room ${room.number}`);
+        del.onclick = async () => {
+          const res = await fetch(`/api/rooms/${room.id}`, { method: "DELETE" });
+          if (!res.ok) {
+            showError((await res.json()).detail);
+            return;
+          }
+          $("status").textContent = `Room ${room.number} deleted`;
+          await load();
+        };
+        actions.append(edit, " ", del);
+      }
+    }
+
+    async function load() {
+      const res = await fetch("/api/rooms");
+      rooms = await res.json();
+      render();
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      showError("");
+      const id = $("room-id").value;
+      const payload = {
+        number: $("room-number").value.trim(),
+        type: $("room-type").value,
+        price: Number($("room-price").value),
+        accessible: $("room-accessible").checked,
+      };
+      if (!payload.number || !payload.price) {
+        showError("Room number and price are required");
+        return;
+      }
+      const res = await fetch(id ? `/api/rooms/${id}` : "/api/rooms", {
+        method: id ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const detail = (await res.json()).detail;
+        showError(Array.isArray(detail) ? detail.map((d) => d.msg).join("; ") : detail);
+        return;
+      }
+      $("status").textContent = id ? `Room ${payload.number} updated` : `Room ${payload.number} created`;
+      resetForm();
+      await load();
+    });
+
+    $("room-cancel").onclick = resetForm;
+    $("logout").onclick = async () => {
+      await fetch("/api/auth/logout", { method: "POST" });
+      location.assign("/login");
+    };
+    load();
+  </script>
+</body>
+</html>

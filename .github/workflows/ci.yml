@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - name: Lint (also bans time.sleep, rule TID251)
+        run: ruff check .
+      - name: Formatting
+        run: ruff format --check .
+
+  smoke:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m playwright install --with-deps chromium
+      - name: Smoke gate
+        run: pytest -m smoke -n auto
+
+  full:
+    needs: smoke
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        backend:
+          - { name: normal, latency_ms: "0" }
+          - { name: slow-400ms, latency_ms: "400" }
+    name: full (${{ matrix.backend.name }} backend)
+    env:
+      HARBOR_LATENCY_MS: ${{ matrix.backend.latency_ms }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m playwright install --with-deps chromium
+      - name: Full regression, parallel, random order
+        run: pytest -n auto
+      - name: Upload HTML report and failure traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-${{ matrix.backend.name }}
+          path: |
+            reports/
+            test-results/
+          retention-days: 14

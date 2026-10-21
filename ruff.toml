@@ -1,0 +1,8 @@
+line-length = 100
+target-version = "py310"
+
+[lint]
+select = ["E", "F", "W", "I", "B", "TID251"]
+
+[lint.flake8-tidy-imports.banned-api]
+"time.sleep".msg = "Fixed sleeps make tests slow and flaky. Use Playwright web-first assertions (expect) instead."
